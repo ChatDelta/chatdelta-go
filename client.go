@@ -13,28 +13,28 @@ func CreateClient(provider, apiKey, model string, config *ClientConfig) (AIClien
 	if config == nil {
 		config = NewClientConfig()
 	}
-	
+
 	if err := ValidateConfig(config); err != nil {
 		return nil, err
 	}
-	
+
 	// Normalize provider name
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	
+
 	// If no API key provided, try to get from environment
 	if apiKey == "" {
 		apiKey = getAPIKeyFromEnv(provider)
 	}
-	
+
 	if apiKey == "" {
 		return nil, NewMissingConfigError("API key for provider: " + provider)
 	}
-	
+
 	// If no model provided, use default
 	if model == "" {
 		model = getDefaultModel(provider)
 	}
-	
+
 	switch provider {
 	case "openai":
 		return NewOpenAIClient(apiKey, model, config)
@@ -87,30 +87,30 @@ func getDefaultModel(provider string) string {
 // GetAvailableProviders returns a list of providers with available API keys
 func GetAvailableProviders() []string {
 	var available []string
-	
+
 	for _, provider := range SupportedProviders {
 		if getAPIKeyFromEnv(provider) != "" {
 			available = append(available, provider)
 		}
 	}
-	
+
 	return available
 }
 
 // ClientInfo holds information about a client
 type ClientInfo struct {
-	Name                   string `json:"name"`
-	Model                  string `json:"model"`
-	SupportsStreaming      bool   `json:"supports_streaming"`
-	SupportsConversations  bool   `json:"supports_conversations"`
+	Name                  string `json:"name"`
+	Model                 string `json:"model"`
+	SupportsStreaming     bool   `json:"supports_streaming"`
+	SupportsConversations bool   `json:"supports_conversations"`
 }
 
 // GetClientInfo returns information about a client
 func GetClientInfo(client AIClient) ClientInfo {
 	return ClientInfo{
-		Name:                   client.Name(),
-		Model:                  client.Model(),
-		SupportsStreaming:      client.SupportsStreaming(),
-		SupportsConversations:  client.SupportsConversations(),
+		Name:                  client.Name(),
+		Model:                 client.Model(),
+		SupportsStreaming:     client.SupportsStreaming(),
+		SupportsConversations: client.SupportsConversations(),
 	}
 }

@@ -69,7 +69,7 @@ func runSingle(provider, model, prompt string, temperature float64, maxTokens in
 		if useStreaming && !client.SupportsStreaming() {
 			fmt.Printf("Note: %s doesn't support streaming, using regular response\n", client.Name())
 		}
-		
+
 		response, err := client.SendPrompt(ctx, prompt)
 		if err != nil {
 			log.Fatalf("Failed to send prompt: %v", err)
