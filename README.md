@@ -361,6 +361,10 @@ go test -v -race -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out
 ```
 
+### Continuous Integration
+
+This repository includes a GitHub Actions workflow that automatically runs `go fmt`, `go vet`, and the test suite on every push and pull request.
+
 ## Contributing
 
 1. Fork the repository
