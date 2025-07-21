@@ -143,13 +143,13 @@ func ExampleExecuteParallel() {
 // ExampleClientConfig demonstrates configuration options
 func ExampleClientConfig() {
 	config := chatdelta.NewClientConfig().
-		SetTimeout(60 * time.Second).      // 60 second timeout
-		SetRetries(5).                     // 5 retry attempts
-		SetTemperature(0.8).               // Creative temperature
-		SetMaxTokens(1024).                // Limit output length
-		SetTopP(0.9).                      // Nucleus sampling
-		SetFrequencyPenalty(0.1).          // Reduce repetition
-		SetPresencePenalty(0.1).           // Encourage topic diversity
+		SetTimeout(60 * time.Second). // 60 second timeout
+		SetRetries(5).                // 5 retry attempts
+		SetTemperature(0.8).          // Creative temperature
+		SetMaxTokens(1024).           // Limit output length
+		SetTopP(0.9).                 // Nucleus sampling
+		SetFrequencyPenalty(0.1).     // Reduce repetition
+		SetPresencePenalty(0.1).      // Encourage topic diversity
 		SetSystemMessage("You are a creative writing assistant.")
 
 	client, err := chatdelta.CreateClient("openai", "your-api-key", "gpt-4", config)
@@ -163,7 +163,7 @@ func ExampleClientConfig() {
 // ExampleGetAvailableProviders demonstrates checking for available API keys
 func ExampleGetAvailableProviders() {
 	available := chatdelta.GetAvailableProviders()
-	
+
 	if len(available) == 0 {
 		fmt.Println("No AI providers available (no API keys found in environment)")
 		fmt.Println("Set one of these environment variables:")
@@ -174,7 +174,7 @@ func ExampleGetAvailableProviders() {
 	}
 
 	fmt.Printf("Available providers: %v\n", available)
-	
+
 	// Create clients for all available providers
 	for _, provider := range available {
 		client, err := chatdelta.CreateClient(provider, "", "", nil)
@@ -182,9 +182,9 @@ func ExampleGetAvailableProviders() {
 			fmt.Printf("Error creating %s client: %v\n", provider, err)
 			continue
 		}
-		
+
 		info := chatdelta.GetClientInfo(client)
-		fmt.Printf("  %s: model=%s, streaming=%t, conversations=%t\n", 
+		fmt.Printf("  %s: model=%s, streaming=%t, conversations=%t\n",
 			info.Name, info.Model, info.SupportsStreaming, info.SupportsConversations)
 	}
 }
@@ -200,7 +200,7 @@ func Example_errorHandling() {
 
 	ctx := context.Background()
 	_, err = client.SendPrompt(ctx, "Hello")
-	
+
 	if err != nil {
 		// Check error type
 		if chatdelta.IsAuthenticationError(err) {
@@ -218,13 +218,13 @@ func Example_errorHandling() {
 // ExampleConversation demonstrates conversation building
 func ExampleConversation() {
 	conversation := chatdelta.NewConversation()
-	
+
 	// Add messages to build a conversation
 	conversation.AddSystemMessage("You are a helpful math tutor.")
 	conversation.AddUserMessage("I need help with algebra.")
 	conversation.AddAssistantMessage("I'd be happy to help you with algebra! What specific topic are you working on?")
 	conversation.AddUserMessage("How do I solve linear equations?")
-	
+
 	fmt.Printf("Conversation has %d messages:\n", len(conversation.Messages))
 	for i, msg := range conversation.Messages {
 		fmt.Printf("%d. %s: %s\n", i+1, msg.Role, msg.Content)

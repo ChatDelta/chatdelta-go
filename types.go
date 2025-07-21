@@ -54,14 +54,14 @@ type StreamChunk struct {
 
 // ClientConfig holds configuration options for AI clients
 type ClientConfig struct {
-	Timeout           time.Duration
-	Retries           int
-	Temperature       *float64
-	MaxTokens         *int
-	TopP              *float64
-	FrequencyPenalty  *float64
-	PresencePenalty   *float64
-	SystemMessage     *string
+	Timeout          time.Duration
+	Retries          int
+	Temperature      *float64
+	MaxTokens        *int
+	TopP             *float64
+	FrequencyPenalty *float64
+	PresencePenalty  *float64
+	SystemMessage    *string
 }
 
 // NewClientConfig creates a new ClientConfig with default values
@@ -124,25 +124,25 @@ func (c *ClientConfig) SetSystemMessage(message string) *ClientConfig {
 type AIClient interface {
 	// SendPrompt sends a single prompt and returns the response
 	SendPrompt(ctx context.Context, prompt string) (string, error)
-	
+
 	// SendConversation sends a conversation and returns the response
 	SendConversation(ctx context.Context, conversation *Conversation) (string, error)
-	
+
 	// StreamPrompt sends a prompt and returns a channel for streaming chunks
 	StreamPrompt(ctx context.Context, prompt string) (<-chan StreamChunk, error)
-	
+
 	// StreamConversation sends a conversation and returns a channel for streaming chunks
 	StreamConversation(ctx context.Context, conversation *Conversation) (<-chan StreamChunk, error)
-	
+
 	// SupportsStreaming returns true if the client supports streaming
 	SupportsStreaming() bool
-	
+
 	// SupportsConversations returns true if the client supports conversations
 	SupportsConversations() bool
-	
+
 	// Name returns the name of the client
 	Name() string
-	
+
 	// Model returns the model identifier
 	Model() string
 }

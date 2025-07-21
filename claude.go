@@ -45,17 +45,17 @@ type claudeDelta struct {
 }
 
 type claudeResponse struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Role    string `json:"role,omitempty"`
+	ID      string          `json:"id"`
+	Type    string          `json:"type"`
+	Role    string          `json:"role,omitempty"`
 	Content []claudeContent `json:"content,omitempty"`
-	Model   string `json:"model,omitempty"`
+	Model   string          `json:"model,omitempty"`
 	Usage   struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage,omitempty"`
-	Delta       *claudeDelta `json:"delta,omitempty"`
-	StopReason  *string      `json:"stop_reason,omitempty"`
+	Delta      *claudeDelta `json:"delta,omitempty"`
+	StopReason *string      `json:"stop_reason,omitempty"`
 }
 
 type claudeErrorDetail struct {
@@ -73,15 +73,15 @@ func NewClaudeClient(apiKey, model string, config *ClientConfig) (*ClaudeClient,
 	if apiKey == "" {
 		return nil, NewInvalidAPIKeyError()
 	}
-	
+
 	if model == "" {
 		model = "claude-3-haiku-20240307"
 	}
-	
+
 	if config == nil {
 		config = NewClientConfig()
 	}
-	
+
 	return &ClaudeClient{
 		apiKey: apiKey,
 		model:  model,
@@ -96,7 +96,7 @@ func NewClaudeClient(apiKey, model string, config *ClientConfig) (*ClaudeClient,
 func (c *ClaudeClient) SendPrompt(ctx context.Context, prompt string) (string, error) {
 	conversation := NewConversation()
 	conversation.AddUserMessage(prompt)
-	
+
 	return c.SendConversation(ctx, conversation)
 }
 
@@ -104,28 +104,28 @@ func (c *ClaudeClient) SendPrompt(ctx context.Context, prompt string) (string, e
 func (c *ClaudeClient) SendConversation(ctx context.Context, conversation *Conversation) (string, error) {
 	var result string
 	var lastErr error
-	
+
 	operation := func() error {
 		response, err := c.sendRequest(ctx, conversation, false)
 		if err != nil {
 			lastErr = err
 			return err
 		}
-		
+
 		if len(response.Content) == 0 {
 			lastErr = NewMissingFieldError("content")
 			return lastErr
 		}
-		
+
 		result = response.Content[0].Text
 		return nil
 	}
-	
+
 	err := ExecuteWithRetry(ctx, c.config.Retries, operation)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return result, nil
 }
 
@@ -133,27 +133,27 @@ func (c *ClaudeClient) SendConversation(ctx context.Context, conversation *Conve
 func (c *ClaudeClient) StreamPrompt(ctx context.Context, prompt string) (<-chan StreamChunk, error) {
 	conversation := NewConversation()
 	conversation.AddUserMessage(prompt)
-	
+
 	return c.StreamConversation(ctx, conversation)
 }
 
 // StreamConversation streams a response for a conversation
 func (c *ClaudeClient) StreamConversation(ctx context.Context, conversation *Conversation) (<-chan StreamChunk, error) {
 	resultChan := make(chan StreamChunk, 10)
-	
+
 	go func() {
 		defer close(resultChan)
-		
+
 		operation := func() error {
 			return c.streamRequest(ctx, conversation, resultChan)
 		}
-		
+
 		err := ExecuteWithRetry(ctx, c.config.Retries, operation)
 		if err != nil {
 			resultChan <- StreamChunk{Content: "", Finished: true}
 		}
 	}()
-	
+
 	return resultChan, nil
 }
 
@@ -162,12 +162,12 @@ func (c *ClaudeClient) sendRequest(ctx context.Context, conversation *Conversati
 	// Separate system messages from conversation messages
 	var systemMessage string
 	var messages []claudeMessage
-	
+
 	// Start with system message from config if available
 	if c.config.SystemMessage != nil {
 		systemMessage = *c.config.SystemMessage
 	}
-	
+
 	for _, msg := range conversation.Messages {
 		if msg.Role == "system" {
 			// Append system messages to the system prompt
@@ -183,12 +183,12 @@ func (c *ClaudeClient) sendRequest(ctx context.Context, conversation *Conversati
 			})
 		}
 	}
-	
+
 	maxTokens := 1024
 	if c.config.MaxTokens != nil {
 		maxTokens = *c.config.MaxTokens
 	}
-	
+
 	request := claudeRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -198,21 +198,21 @@ func (c *ClaudeClient) sendRequest(ctx context.Context, conversation *Conversati
 		MaxTokens:   maxTokens,
 		TopP:        c.config.TopP,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return nil, NewJSONParseError(err)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, NewConnectionError(err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -221,12 +221,12 @@ func (c *ClaudeClient) sendRequest(ctx context.Context, conversation *Conversati
 		return nil, NewConnectionError(err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, NewConnectionError(err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		var errorResp claudeErrorResponse
 		if err := json.Unmarshal(body, &errorResp); err == nil {
@@ -234,12 +234,12 @@ func (c *ClaudeClient) sendRequest(ctx context.Context, conversation *Conversati
 		}
 		return nil, NewServerError(resp.StatusCode, string(body))
 	}
-	
+
 	var response claudeResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, NewJSONParseError(err)
 	}
-	
+
 	return &response, nil
 }
 
@@ -248,12 +248,12 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 	// Separate system messages from conversation messages
 	var systemMessage string
 	var messages []claudeMessage
-	
+
 	// Start with system message from config if available
 	if c.config.SystemMessage != nil {
 		systemMessage = *c.config.SystemMessage
 	}
-	
+
 	for _, msg := range conversation.Messages {
 		if msg.Role == "system" {
 			// Append system messages to the system prompt
@@ -269,12 +269,12 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 			})
 		}
 	}
-	
+
 	maxTokens := 1024
 	if c.config.MaxTokens != nil {
 		maxTokens = *c.config.MaxTokens
 	}
-	
+
 	request := claudeRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -284,22 +284,22 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 		MaxTokens:   maxTokens,
 		TopP:        c.config.TopP,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return NewJSONParseError(err)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return NewConnectionError(err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("Accept", "text/event-stream")
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -308,7 +308,7 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 		return NewConnectionError(err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		var errorResp claudeErrorResponse
@@ -317,7 +317,7 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 		}
 		return NewServerError(resp.StatusCode, string(body))
 	}
-	
+
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -327,12 +327,12 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 				resultChan <- StreamChunk{Content: "", Finished: true}
 				return nil
 			}
-			
+
 			var response claudeResponse
 			if err := json.Unmarshal([]byte(data), &response); err != nil {
 				continue // Skip malformed chunks
 			}
-			
+
 			// Handle different event types
 			switch response.Type {
 			case "content_block_delta":
@@ -348,11 +348,11 @@ func (c *ClaudeClient) streamRequest(ctx context.Context, conversation *Conversa
 			}
 		}
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		return NewStreamReadError(err)
 	}
-	
+
 	return nil
 }
 

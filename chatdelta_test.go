@@ -17,7 +17,7 @@ func TestNewConversation(t *testing.T) {
 
 func TestConversation_AddMessage(t *testing.T) {
 	conv := NewConversation()
-	
+
 	conv.AddMessage("user", "Hello")
 	assert.Len(t, conv.Messages, 1)
 	assert.Equal(t, "user", conv.Messages[0].Role)
@@ -26,11 +26,11 @@ func TestConversation_AddMessage(t *testing.T) {
 
 func TestConversation_AddHelperMethods(t *testing.T) {
 	conv := NewConversation()
-	
+
 	conv.AddSystemMessage("System message")
 	conv.AddUserMessage("User message")
 	conv.AddAssistantMessage("Assistant message")
-	
+
 	require.Len(t, conv.Messages, 3)
 	assert.Equal(t, "system", conv.Messages[0].Role)
 	assert.Equal(t, "user", conv.Messages[1].Role)
@@ -48,7 +48,7 @@ func TestNewClientConfig(t *testing.T) {
 
 func TestClientConfig_BuilderPattern(t *testing.T) {
 	config := NewClientConfig().
-		SetTimeout(60*time.Second).
+		SetTimeout(60 * time.Second).
 		SetRetries(5).
 		SetTemperature(0.7).
 		SetMaxTokens(1024).
@@ -56,7 +56,7 @@ func TestClientConfig_BuilderPattern(t *testing.T) {
 		SetFrequencyPenalty(0.1).
 		SetPresencePenalty(0.1).
 		SetSystemMessage("Test message")
-	
+
 	assert.Equal(t, 60*time.Second, config.Timeout)
 	assert.Equal(t, 5, config.Retries)
 	assert.Equal(t, 0.7, *config.Temperature)
@@ -211,11 +211,11 @@ func TestCreateClient(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, client)
-				
+
 				// Test client properties
 				assert.NotEmpty(t, client.Name())
 				assert.NotEmpty(t, client.Model())
-				
+
 				// Test boolean methods don't panic
 				assert.NotPanics(t, func() { client.SupportsStreaming() })
 				assert.NotPanics(t, func() { client.SupportsConversations() })
@@ -248,7 +248,7 @@ func TestGetDefaultModel(t *testing.T) {
 func TestGetClientInfo(t *testing.T) {
 	client, err := CreateClient("openai", "test-key", "gpt-4", nil)
 	require.NoError(t, err)
-	
+
 	info := GetClientInfo(client)
 	assert.Equal(t, "OpenAI", info.Name)
 	assert.Equal(t, "gpt-4", info.Model)
@@ -262,7 +262,7 @@ func TestMergeStreamChunks(t *testing.T) {
 	chunks <- StreamChunk{Content: "World!", Finished: false}
 	chunks <- StreamChunk{Content: "", Finished: true}
 	close(chunks)
-	
+
 	result, err := MergeStreamChunks(chunks)
 	assert.NoError(t, err)
 	assert.Equal(t, "Hello World!", result)
@@ -271,25 +271,25 @@ func TestMergeStreamChunks(t *testing.T) {
 func TestExecuteParallel(t *testing.T) {
 	// Create mock clients for testing
 	var clients []AIClient
-	
+
 	client1, err := CreateClient("openai", "test-key", "", nil)
 	require.NoError(t, err)
 	clients = append(clients, client1)
-	
+
 	client2, err := CreateClient("claude", "test-key", "", nil)
 	require.NoError(t, err)
 	clients = append(clients, client2)
-	
+
 	// Note: This will fail with invalid API keys, but tests the structure
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	
+
 	results := ExecuteParallel(ctx, clients, "Test prompt")
-	
+
 	assert.Len(t, results, 2)
 	assert.Equal(t, "OpenAI", results[0].ClientName)
 	assert.Equal(t, "Claude", results[1].ClientName)
-	
+
 	// Results should contain errors due to invalid API keys
 	assert.Error(t, results[0].Error)
 	assert.Error(t, results[1].Error)
@@ -298,23 +298,23 @@ func TestExecuteParallel(t *testing.T) {
 func TestExecuteParallelConversation(t *testing.T) {
 	// Create mock clients for testing
 	var clients []AIClient
-	
+
 	client1, err := CreateClient("openai", "test-key", "", nil)
 	require.NoError(t, err)
 	clients = append(clients, client1)
-	
+
 	conversation := NewConversation()
 	conversation.AddUserMessage("Test message")
-	
+
 	// Note: This will fail with invalid API keys, but tests the structure
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
-	
+
 	results := ExecuteParallelConversation(ctx, clients, conversation)
-	
+
 	assert.Len(t, results, 1)
 	assert.Equal(t, "OpenAI", results[0].ClientName)
-	
+
 	// Result should contain error due to invalid API key
 	assert.Error(t, results[0].Error)
 }

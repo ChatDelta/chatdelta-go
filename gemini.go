@@ -57,9 +57,9 @@ type geminiSystemInstruction struct {
 }
 
 type geminiRequest struct {
-	Contents           []geminiContent         `json:"contents"`
-	GenerationConfig   *geminiGenerationConfig `json:"generationConfig,omitempty"`
-	SystemInstruction  *geminiSystemInstruction `json:"systemInstruction,omitempty"`
+	Contents          []geminiContent          `json:"contents"`
+	GenerationConfig  *geminiGenerationConfig  `json:"generationConfig,omitempty"`
+	SystemInstruction *geminiSystemInstruction `json:"systemInstruction,omitempty"`
 }
 
 type geminiResponse struct {
@@ -85,15 +85,15 @@ func NewGeminiClient(apiKey, model string, config *ClientConfig) (*GeminiClient,
 	if apiKey == "" {
 		return nil, NewInvalidAPIKeyError()
 	}
-	
+
 	if model == "" {
 		model = "gemini-1.5-flash"
 	}
-	
+
 	if config == nil {
 		config = NewClientConfig()
 	}
-	
+
 	return &GeminiClient{
 		apiKey: apiKey,
 		model:  model,
@@ -111,7 +111,7 @@ func (c *GeminiClient) SendPrompt(ctx context.Context, prompt string) (string, e
 		conversation.AddSystemMessage(*c.config.SystemMessage)
 	}
 	conversation.AddUserMessage(prompt)
-	
+
 	return c.SendConversation(ctx, conversation)
 }
 
@@ -119,34 +119,34 @@ func (c *GeminiClient) SendPrompt(ctx context.Context, prompt string) (string, e
 func (c *GeminiClient) SendConversation(ctx context.Context, conversation *Conversation) (string, error) {
 	var result string
 	var lastErr error
-	
+
 	operation := func() error {
 		response, err := c.sendRequest(ctx, conversation)
 		if err != nil {
 			lastErr = err
 			return err
 		}
-		
+
 		if len(response.Candidates) == 0 {
 			lastErr = NewMissingFieldError("candidates")
 			return lastErr
 		}
-		
+
 		candidate := response.Candidates[0]
 		if len(candidate.Content.Parts) == 0 {
 			lastErr = NewMissingFieldError("parts")
 			return lastErr
 		}
-		
+
 		result = candidate.Content.Parts[0].Text
 		return nil
 	}
-	
+
 	err := ExecuteWithRetry(ctx, c.config.Retries, operation)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return result, nil
 }
 
@@ -155,19 +155,19 @@ func (c *GeminiClient) StreamPrompt(ctx context.Context, prompt string) (<-chan 
 	// Gemini doesn't support streaming in this implementation
 	// Fall back to non-streaming and emit the result as a single chunk
 	resultChan := make(chan StreamChunk, 1)
-	
+
 	go func() {
 		defer close(resultChan)
-		
+
 		result, err := c.SendPrompt(ctx, prompt)
 		if err != nil {
 			resultChan <- StreamChunk{Content: "", Finished: true}
 			return
 		}
-		
+
 		resultChan <- StreamChunk{Content: result, Finished: true}
 	}()
-	
+
 	return resultChan, nil
 }
 
@@ -176,19 +176,19 @@ func (c *GeminiClient) StreamConversation(ctx context.Context, conversation *Con
 	// Gemini doesn't support streaming in this implementation
 	// Fall back to non-streaming and emit the result as a single chunk
 	resultChan := make(chan StreamChunk, 1)
-	
+
 	go func() {
 		defer close(resultChan)
-		
+
 		result, err := c.SendConversation(ctx, conversation)
 		if err != nil {
 			resultChan <- StreamChunk{Content: "", Finished: true}
 			return
 		}
-		
+
 		resultChan <- StreamChunk{Content: result, Finished: true}
 	}()
-	
+
 	return resultChan, nil
 }
 
@@ -197,13 +197,13 @@ func (c *GeminiClient) sendRequest(ctx context.Context, conversation *Conversati
 	// Convert messages to Gemini format
 	var contents []geminiContent
 	var systemInstruction *geminiSystemInstruction
-	
+
 	// Handle system messages
 	var systemMessages []string
 	if c.config.SystemMessage != nil {
 		systemMessages = append(systemMessages, *c.config.SystemMessage)
 	}
-	
+
 	for _, msg := range conversation.Messages {
 		if msg.Role == "system" {
 			systemMessages = append(systemMessages, msg.Content)
@@ -213,21 +213,21 @@ func (c *GeminiClient) sendRequest(ctx context.Context, conversation *Conversati
 			if role == "assistant" {
 				role = "model"
 			}
-			
+
 			contents = append(contents, geminiContent{
 				Parts: []geminiPart{{Text: msg.Content}},
 				Role:  role,
 			})
 		}
 	}
-	
+
 	// Combine system messages
 	if len(systemMessages) > 0 {
 		systemInstruction = &geminiSystemInstruction{
 			Parts: []geminiPart{{Text: strings.Join(systemMessages, "\n\n")}},
 		}
 	}
-	
+
 	// Build generation config
 	var genConfig *geminiGenerationConfig
 	if c.config.Temperature != nil || c.config.TopP != nil || c.config.MaxTokens != nil {
@@ -237,28 +237,28 @@ func (c *GeminiClient) sendRequest(ctx context.Context, conversation *Conversati
 			MaxTokens:   c.config.MaxTokens,
 		}
 	}
-	
+
 	request := geminiRequest{
 		Contents:          contents,
 		GenerationConfig:  genConfig,
 		SystemInstruction: systemInstruction,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return nil, NewJSONParseError(err)
 	}
-	
+
 	// Build URL with API key
 	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", c.model, c.apiKey)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, NewConnectionError(err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -267,12 +267,12 @@ func (c *GeminiClient) sendRequest(ctx context.Context, conversation *Conversati
 		return nil, NewConnectionError(err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, NewConnectionError(err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		var errorResp geminiErrorResponse
 		if err := json.Unmarshal(body, &errorResp); err == nil {
@@ -280,12 +280,12 @@ func (c *GeminiClient) sendRequest(ctx context.Context, conversation *Conversati
 		}
 		return nil, NewServerError(resp.StatusCode, string(body))
 	}
-	
+
 	var response geminiResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, NewJSONParseError(err)
 	}
-	
+
 	return &response, nil
 }
 

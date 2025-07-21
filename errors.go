@@ -228,17 +228,17 @@ func IsNetworkError(err error) bool {
 	if ce, ok := err.(*ClientError); ok {
 		return ce.Type == ErrorTypeNetwork
 	}
-	
+
 	// Check for standard library network errors
 	if netErr, ok := err.(net.Error); ok {
 		return netErr.Timeout() || netErr.Temporary()
 	}
-	
+
 	// Check for URL errors
 	if _, ok := err.(*url.Error); ok {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -254,12 +254,12 @@ func IsRetryableError(err error) bool {
 			return false
 		}
 	}
-	
+
 	// Check for standard library network errors
 	if netErr, ok := err.(net.Error); ok {
 		return netErr.Timeout() || netErr.Temporary()
 	}
-	
+
 	return false
 }
 

@@ -49,10 +49,10 @@ type openAIChoice struct {
 }
 
 type openAIResponse struct {
-	ID      string        `json:"id"`
-	Object  string        `json:"object"`
-	Created int64         `json:"created"`
-	Model   string        `json:"model"`
+	ID      string         `json:"id"`
+	Object  string         `json:"object"`
+	Created int64          `json:"created"`
+	Model   string         `json:"model"`
 	Choices []openAIChoice `json:"choices"`
 	Usage   struct {
 		PromptTokens     int `json:"prompt_tokens"`
@@ -76,15 +76,15 @@ func NewOpenAIClient(apiKey, model string, config *ClientConfig) (*OpenAIClient,
 	if apiKey == "" {
 		return nil, NewInvalidAPIKeyError()
 	}
-	
+
 	if model == "" {
 		model = "gpt-3.5-turbo"
 	}
-	
+
 	if config == nil {
 		config = NewClientConfig()
 	}
-	
+
 	return &OpenAIClient{
 		apiKey: apiKey,
 		model:  model,
@@ -102,7 +102,7 @@ func (c *OpenAIClient) SendPrompt(ctx context.Context, prompt string) (string, e
 		conversation.AddSystemMessage(*c.config.SystemMessage)
 	}
 	conversation.AddUserMessage(prompt)
-	
+
 	return c.SendConversation(ctx, conversation)
 }
 
@@ -110,28 +110,28 @@ func (c *OpenAIClient) SendPrompt(ctx context.Context, prompt string) (string, e
 func (c *OpenAIClient) SendConversation(ctx context.Context, conversation *Conversation) (string, error) {
 	var result string
 	var lastErr error
-	
+
 	operation := func() error {
 		response, err := c.sendRequest(ctx, conversation, false)
 		if err != nil {
 			lastErr = err
 			return err
 		}
-		
+
 		if len(response.Choices) == 0 {
 			lastErr = NewMissingFieldError("choices")
 			return lastErr
 		}
-		
+
 		result = response.Choices[0].Message.Content
 		return nil
 	}
-	
+
 	err := ExecuteWithRetry(ctx, c.config.Retries, operation)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return result, nil
 }
 
@@ -142,27 +142,27 @@ func (c *OpenAIClient) StreamPrompt(ctx context.Context, prompt string) (<-chan 
 		conversation.AddSystemMessage(*c.config.SystemMessage)
 	}
 	conversation.AddUserMessage(prompt)
-	
+
 	return c.StreamConversation(ctx, conversation)
 }
 
 // StreamConversation streams a response for a conversation
 func (c *OpenAIClient) StreamConversation(ctx context.Context, conversation *Conversation) (<-chan StreamChunk, error) {
 	resultChan := make(chan StreamChunk, 10)
-	
+
 	go func() {
 		defer close(resultChan)
-		
+
 		operation := func() error {
 			return c.streamRequest(ctx, conversation, resultChan)
 		}
-		
+
 		err := ExecuteWithRetry(ctx, c.config.Retries, operation)
 		if err != nil {
 			resultChan <- StreamChunk{Content: "", Finished: true}
 		}
 	}()
-	
+
 	return resultChan, nil
 }
 
@@ -175,7 +175,7 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, conversation *Conversati
 			Content: msg.Content,
 		}
 	}
-	
+
 	request := openAIRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -186,20 +186,20 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, conversation *Conversati
 		FreqPenalty: c.config.FrequencyPenalty,
 		PresPenalty: c.config.PresencePenalty,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return nil, NewJSONParseError(err)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, NewConnectionError(err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -208,12 +208,12 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, conversation *Conversati
 		return nil, NewConnectionError(err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, NewConnectionError(err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		var errorResp openAIErrorResponse
 		if err := json.Unmarshal(body, &errorResp); err == nil {
@@ -221,12 +221,12 @@ func (c *OpenAIClient) sendRequest(ctx context.Context, conversation *Conversati
 		}
 		return nil, NewServerError(resp.StatusCode, string(body))
 	}
-	
+
 	var response openAIResponse
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, NewJSONParseError(err)
 	}
-	
+
 	return &response, nil
 }
 
@@ -239,7 +239,7 @@ func (c *OpenAIClient) streamRequest(ctx context.Context, conversation *Conversa
 			Content: msg.Content,
 		}
 	}
-	
+
 	request := openAIRequest{
 		Model:       c.model,
 		Messages:    messages,
@@ -250,21 +250,21 @@ func (c *OpenAIClient) streamRequest(ctx context.Context, conversation *Conversa
 		FreqPenalty: c.config.FrequencyPenalty,
 		PresPenalty: c.config.PresencePenalty,
 	}
-	
+
 	jsonData, err := json.Marshal(request)
 	if err != nil {
 		return NewJSONParseError(err)
 	}
-	
+
 	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.openai.com/v1/chat/completions", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return NewConnectionError(err)
 	}
-	
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "text/event-stream")
-	
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -273,7 +273,7 @@ func (c *OpenAIClient) streamRequest(ctx context.Context, conversation *Conversa
 		return NewConnectionError(err)
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		var errorResp openAIErrorResponse
@@ -282,7 +282,7 @@ func (c *OpenAIClient) streamRequest(ctx context.Context, conversation *Conversa
 		}
 		return NewServerError(resp.StatusCode, string(body))
 	}
-	
+
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -292,32 +292,32 @@ func (c *OpenAIClient) streamRequest(ctx context.Context, conversation *Conversa
 				resultChan <- StreamChunk{Content: "", Finished: true}
 				return nil
 			}
-			
+
 			var response openAIResponse
 			if err := json.Unmarshal([]byte(data), &response); err != nil {
 				continue // Skip malformed chunks
 			}
-			
+
 			if len(response.Choices) > 0 {
 				content := response.Choices[0].Delta.Content
 				finished := response.Choices[0].FinishReason != nil
-				
+
 				resultChan <- StreamChunk{
 					Content:  content,
 					Finished: finished,
 				}
-				
+
 				if finished {
 					return nil
 				}
 			}
 		}
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		return NewStreamReadError(err)
 	}
-	
+
 	return nil
 }
 

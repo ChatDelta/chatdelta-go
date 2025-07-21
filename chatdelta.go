@@ -92,10 +92,10 @@ package chatdelta
 const (
 	// Version of the chatdelta-go library
 	Version = "1.0.0"
-	
+
 	// DefaultTimeout is the default timeout for HTTP requests
 	DefaultTimeout = 30
-	
+
 	// DefaultRetries is the default number of retry attempts
 	DefaultRetries = 3
 )
@@ -110,6 +110,6 @@ func QuickPrompt(provider, prompt string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	return client.SendPrompt(nil, prompt)
 }
