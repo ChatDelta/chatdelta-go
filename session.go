@@ -4,14 +4,21 @@ import (
 	"context"
 )
 
-// ChatSession manages multi-turn conversations with an AI client
-// Ported from chatdelta-rs/src/lib.rs:341-428
+// ChatSession manages multi-turn conversations with an AI client.
+// It automatically maintains conversation history and handles context.
+//
+// Example:
+//
+//	session := NewChatSessionWithSystemMessage(client, "You are a helpful assistant.")
+//	response1, err := session.Send(ctx, "What is Go?")
+//	response2, err := session.Send(ctx, "What are its benefits?") // Remembers context
 type ChatSession struct {
 	client       AIClient
 	conversation *Conversation
 }
 
-// NewChatSession creates a new chat session with the given client
+// NewChatSession creates a new chat session with the given client.
+// The conversation starts empty with no system message.
 func NewChatSession(client AIClient) *ChatSession {
 	return &ChatSession{
 		client:       client,
@@ -19,7 +26,8 @@ func NewChatSession(client AIClient) *ChatSession {
 	}
 }
 
-// NewChatSessionWithSystemMessage creates a new chat session with a system message
+// NewChatSessionWithSystemMessage creates a new chat session with a system message.
+// The system message sets the context and behavior for the AI assistant.
 func NewChatSessionWithSystemMessage(client AIClient, message string) *ChatSession {
 	session := &ChatSession{
 		client:       client,
@@ -29,7 +37,10 @@ func NewChatSessionWithSystemMessage(client AIClient, message string) *ChatSessi
 	return session
 }
 
-// Send sends a message and gets a response
+// Send sends a message and gets a response.
+// The message is added to the conversation history as a user message,
+// and the response is added as an assistant message.
+// If an error occurs, the user message is removed from history.
 func (s *ChatSession) Send(ctx context.Context, message string) (string, error) {
 	s.conversation.AddUserMessage(message)
 	
@@ -46,7 +57,9 @@ func (s *ChatSession) Send(ctx context.Context, message string) (string, error) 
 	return response, nil
 }
 
-// SendWithMetadata sends a message and gets a response with metadata
+// SendWithMetadata sends a message and gets a response with metadata.
+// This includes token counts, latency, and other provider-specific information.
+// The conversation history is updated the same as Send.
 func (s *ChatSession) SendWithMetadata(ctx context.Context, message string) (*AiResponse, error) {
 	s.conversation.AddUserMessage(message)
 	
@@ -63,7 +76,9 @@ func (s *ChatSession) SendWithMetadata(ctx context.Context, message string) (*Ai
 	return response, nil
 }
 
-// Stream sends a message and returns a channel for streaming chunks
+// Stream sends a message and returns a channel for streaming chunks.
+// The complete response is assembled and added to history when streaming completes.
+// The returned channel is buffered and will be closed when streaming ends.
 func (s *ChatSession) Stream(ctx context.Context, message string) (<-chan StreamChunk, error) {
 	s.conversation.AddUserMessage(message)
 	
@@ -94,33 +109,36 @@ func (s *ChatSession) Stream(ctx context.Context, message string) (<-chan Stream
 	return wrapped, nil
 }
 
-// AddMessage adds a message to the conversation without sending
+// AddMessage adds a message to the conversation without sending it.
+// Use this to manually construct conversation history.
 func (s *ChatSession) AddMessage(message Message) {
 	s.conversation.Messages = append(s.conversation.Messages, message)
 }
 
-// History returns the conversation history
+// History returns the conversation history.
+// The returned conversation can be modified directly if needed.
 func (s *ChatSession) History() *Conversation {
 	return s.conversation
 }
 
-// Clear clears the conversation history
+// Clear removes all messages from the conversation history.
 func (s *ChatSession) Clear() {
 	s.conversation.Messages = make([]Message, 0)
 }
 
-// ResetWithSystem resets the session with a new system message
+// ResetWithSystem clears the conversation and sets a new system message.
+// This is useful for changing the AI's behavior mid-session.
 func (s *ChatSession) ResetWithSystem(message string) {
 	s.conversation = NewConversation()
 	s.conversation.AddSystemMessage(message)
 }
 
-// Len returns the number of messages in the conversation
+// Len returns the number of messages in the conversation.
 func (s *ChatSession) Len() int {
 	return len(s.conversation.Messages)
 }
 
-// IsEmpty checks if the conversation is empty
+// IsEmpty returns true if the conversation has no messages.
 func (s *ChatSession) IsEmpty() bool {
 	return len(s.conversation.Messages) == 0
 }
