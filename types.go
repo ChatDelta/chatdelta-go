@@ -46,11 +46,40 @@ func (c *Conversation) AddAssistantMessage(content string) {
 	c.AddMessage("assistant", content)
 }
 
+// ResponseMetadata contains additional information from the AI provider
+type ResponseMetadata struct {
+	ModelUsed        string      `json:"model_used,omitempty"`
+	PromptTokens     int         `json:"prompt_tokens,omitempty"`
+	CompletionTokens int         `json:"completion_tokens,omitempty"`
+	TotalTokens      int         `json:"total_tokens,omitempty"`
+	FinishReason     string      `json:"finish_reason,omitempty"`
+	SafetyRatings    interface{} `json:"safety_ratings,omitempty"`
+	RequestID        string      `json:"request_id,omitempty"`
+	LatencyMs        int64       `json:"latency_ms,omitempty"`
+}
+
+// AiResponse combines content and metadata
+type AiResponse struct {
+	Content  string           `json:"content"`
+	Metadata ResponseMetadata `json:"metadata"`
+}
+
 // StreamChunk represents a chunk of streaming response
 type StreamChunk struct {
-	Content  string `json:"content"`
-	Finished bool   `json:"finished"`
+	Content  string            `json:"content"`
+	Finished bool              `json:"finished"`
+	Metadata *ResponseMetadata `json:"metadata,omitempty"`
 }
+
+// RetryStrategy defines the retry behavior
+type RetryStrategy string
+
+const (
+	RetryStrategyFixed               RetryStrategy = "fixed"
+	RetryStrategyLinear              RetryStrategy = "linear"
+	RetryStrategyExponentialBackoff  RetryStrategy = "exponential"
+	RetryStrategyExponentialWithJitter RetryStrategy = "exponential_with_jitter"
+)
 
 // ClientConfig holds configuration options for AI clients
 type ClientConfig struct {
@@ -62,13 +91,16 @@ type ClientConfig struct {
 	FrequencyPenalty *float64
 	PresencePenalty  *float64
 	SystemMessage    *string
+	BaseURL          *string
+	RetryStrategy    RetryStrategy
 }
 
 // NewClientConfig creates a new ClientConfig with default values
 func NewClientConfig() *ClientConfig {
 	return &ClientConfig{
-		Timeout: 30 * time.Second,
-		Retries: 3,
+		Timeout:       30 * time.Second,
+		Retries:       3,
+		RetryStrategy: RetryStrategyExponentialBackoff,
 	}
 }
 
@@ -120,13 +152,31 @@ func (c *ClientConfig) SetSystemMessage(message string) *ClientConfig {
 	return c
 }
 
+// SetBaseURL sets the custom base URL for API endpoint
+func (c *ClientConfig) SetBaseURL(url string) *ClientConfig {
+	c.BaseURL = &url
+	return c
+}
+
+// SetRetryStrategy sets the retry strategy
+func (c *ClientConfig) SetRetryStrategy(strategy RetryStrategy) *ClientConfig {
+	c.RetryStrategy = strategy
+	return c
+}
+
 // AIClient defines the interface for all AI clients
 type AIClient interface {
 	// SendPrompt sends a single prompt and returns the response
 	SendPrompt(ctx context.Context, prompt string) (string, error)
 
+	// SendPromptWithMetadata sends a prompt and returns response with metadata
+	SendPromptWithMetadata(ctx context.Context, prompt string) (*AiResponse, error)
+
 	// SendConversation sends a conversation and returns the response
 	SendConversation(ctx context.Context, conversation *Conversation) (string, error)
+
+	// SendConversationWithMetadata sends a conversation and returns response with metadata
+	SendConversationWithMetadata(ctx context.Context, conversation *Conversation) (*AiResponse, error)
 
 	// StreamPrompt sends a prompt and returns a channel for streaming chunks
 	StreamPrompt(ctx context.Context, prompt string) (<-chan StreamChunk, error)

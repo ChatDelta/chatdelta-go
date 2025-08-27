@@ -13,6 +13,10 @@ A complete Go library for connecting to multiple AI APIs with a unified interfac
 - ✅ **Configurable**: Timeout, retries, temperature, tokens, and more
 - ✅ **Environment Integration**: Automatic API key detection from environment variables
 - ✅ **Type Safe**: Full Go type safety with comprehensive interfaces
+- 🆕 **Response Metadata**: Token counts, latency tracking, and request IDs (v0.3.0)
+- 🆕 **Chat Sessions**: High-level conversation management with automatic history (v0.3.0)
+- 🆕 **Custom Base URLs**: Support for Azure OpenAI and local models (v0.3.0)
+- 🆕 **Advanced Retry Strategies**: Fixed, Linear, Exponential, and ExponentialWithJitter (v0.3.0)
 
 ## Installation
 
@@ -144,6 +148,53 @@ for _, result := range results {
         fmt.Printf("Response: %s\n", result.Result)
     }
 }
+```
+
+### Chat Sessions (NEW in v0.3.0)
+
+```go
+// Create a session with automatic history management
+session := chatdelta.NewChatSessionWithSystemMessage(
+    client, 
+    "You are a helpful assistant.",
+)
+
+// Send messages - history is managed automatically
+response1, err := session.Send(context.Background(), "What is Go?")
+response2, err := session.Send(context.Background(), "What are its main features?")
+
+// Get response with metadata
+responseMeta, err := session.SendWithMetadata(context.Background(), "Compare it to Python")
+fmt.Printf("Tokens used: %d\n", responseMeta.Metadata.TotalTokens)
+fmt.Printf("Latency: %dms\n", responseMeta.Metadata.LatencyMs)
+```
+
+### Response Metadata (NEW in v0.3.0)
+
+```go
+// Get detailed metadata with responses
+response, err := client.SendPromptWithMetadata(context.Background(), "Explain goroutines")
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println("Content:", response.Content)
+fmt.Println("Model:", response.Metadata.ModelUsed)
+fmt.Println("Prompt tokens:", response.Metadata.PromptTokens)
+fmt.Println("Completion tokens:", response.Metadata.CompletionTokens)
+fmt.Println("Total tokens:", response.Metadata.TotalTokens)
+fmt.Printf("Latency: %dms\n", response.Metadata.LatencyMs)
+```
+
+### Custom Base URLs (NEW in v0.3.0)
+
+```go
+// Support for Azure OpenAI or local models
+config := chatdelta.NewClientConfig().
+    SetBaseURL("https://your-instance.openai.azure.com").
+    SetRetryStrategy(chatdelta.RetryStrategyExponentialWithJitter)
+
+client, err := chatdelta.CreateClient("openai", apiKey, "gpt-4", config)
 ```
 
 ### Error Handling
