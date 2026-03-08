@@ -385,6 +385,53 @@ func (c *ClaudeClient) SupportsConversations() bool {
 	return true
 }
 
+// SendPromptWithMetadata sends a prompt and returns the response with metadata.
+func (c *ClaudeClient) SendPromptWithMetadata(ctx context.Context, prompt string) (*AiResponse, error) {
+	conversation := NewConversation()
+	conversation.AddUserMessage(prompt)
+	return c.SendConversationWithMetadata(ctx, conversation)
+}
+
+// SendConversationWithMetadata sends a conversation and returns the response with metadata.
+func (c *ClaudeClient) SendConversationWithMetadata(ctx context.Context, conversation *Conversation) (*AiResponse, error) {
+	var result *AiResponse
+	var lastErr error
+
+	operation := func() error {
+		response, err := c.sendRequest(ctx, conversation, false)
+		if err != nil {
+			lastErr = err
+			return err
+		}
+		if len(response.Content) == 0 {
+			lastErr = NewMissingFieldError("content")
+			return lastErr
+		}
+		finishReason := ""
+		if response.StopReason != nil {
+			finishReason = *response.StopReason
+		}
+		result = &AiResponse{
+			Content: response.Content[0].Text,
+			Metadata: ResponseMetadata{
+				ModelUsed:        response.Model,
+				PromptTokens:     response.Usage.InputTokens,
+				CompletionTokens: response.Usage.OutputTokens,
+				TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
+				FinishReason:     finishReason,
+				RequestID:        response.ID,
+			},
+		}
+		return nil
+	}
+
+	if err := ExecuteWithRetry(ctx, c.config.Retries, operation); err != nil {
+		return nil, err
+	}
+	_ = lastErr
+	return result, nil
+}
+
 // Name returns the client name
 func (c *ClaudeClient) Name() string {
 	return "Claude"

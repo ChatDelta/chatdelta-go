@@ -340,6 +340,56 @@ func (c *OpenAIClient) parseAPIError(statusCode int, error *openAIErrorDetail) *
 	}
 }
 
+// SendPromptWithMetadata sends a prompt and returns the response with metadata.
+func (c *OpenAIClient) SendPromptWithMetadata(ctx context.Context, prompt string) (*AiResponse, error) {
+	conversation := NewConversation()
+	if c.config.SystemMessage != nil {
+		conversation.AddSystemMessage(*c.config.SystemMessage)
+	}
+	conversation.AddUserMessage(prompt)
+	return c.SendConversationWithMetadata(ctx, conversation)
+}
+
+// SendConversationWithMetadata sends a conversation and returns the response with metadata.
+func (c *OpenAIClient) SendConversationWithMetadata(ctx context.Context, conversation *Conversation) (*AiResponse, error) {
+	var result *AiResponse
+	var lastErr error
+
+	operation := func() error {
+		response, err := c.sendRequest(ctx, conversation, false)
+		if err != nil {
+			lastErr = err
+			return err
+		}
+		if len(response.Choices) == 0 {
+			lastErr = NewMissingFieldError("choices")
+			return lastErr
+		}
+		finishReason := ""
+		if response.Choices[0].FinishReason != nil {
+			finishReason = *response.Choices[0].FinishReason
+		}
+		result = &AiResponse{
+			Content: response.Choices[0].Message.Content,
+			Metadata: ResponseMetadata{
+				ModelUsed:        response.Model,
+				PromptTokens:     response.Usage.PromptTokens,
+				CompletionTokens: response.Usage.CompletionTokens,
+				TotalTokens:      response.Usage.TotalTokens,
+				FinishReason:     finishReason,
+				RequestID:        response.ID,
+			},
+		}
+		return nil
+	}
+
+	if err := ExecuteWithRetry(ctx, c.config.Retries, operation); err != nil {
+		return nil, err
+	}
+	_ = lastErr
+	return result, nil
+}
+
 // SupportsStreaming returns true (OpenAI supports streaming)
 func (c *OpenAIClient) SupportsStreaming() bool {
 	return true

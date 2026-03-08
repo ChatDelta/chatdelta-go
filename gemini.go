@@ -308,6 +308,59 @@ func (c *GeminiClient) parseAPIError(statusCode int, error *geminiErrorDetail) *
 	}
 }
 
+// SendPromptWithMetadata sends a prompt and returns the response with metadata.
+func (c *GeminiClient) SendPromptWithMetadata(ctx context.Context, prompt string) (*AiResponse, error) {
+	conversation := NewConversation()
+	if c.config.SystemMessage != nil {
+		conversation.AddSystemMessage(*c.config.SystemMessage)
+	}
+	conversation.AddUserMessage(prompt)
+	return c.SendConversationWithMetadata(ctx, conversation)
+}
+
+// SendConversationWithMetadata sends a conversation and returns the response with metadata.
+func (c *GeminiClient) SendConversationWithMetadata(ctx context.Context, conversation *Conversation) (*AiResponse, error) {
+	var result *AiResponse
+	var lastErr error
+
+	operation := func() error {
+		response, err := c.sendRequest(ctx, conversation)
+		if err != nil {
+			lastErr = err
+			return err
+		}
+		if len(response.Candidates) == 0 {
+			lastErr = NewMissingFieldError("candidates")
+			return lastErr
+		}
+		candidate := response.Candidates[0]
+		if len(candidate.Content.Parts) == 0 {
+			lastErr = NewMissingFieldError("parts")
+			return lastErr
+		}
+		meta := ResponseMetadata{
+			ModelUsed:    c.model,
+			FinishReason: candidate.FinishReason,
+		}
+		if response.UsageMetadata != nil {
+			meta.PromptTokens = response.UsageMetadata.PromptTokenCount
+			meta.CompletionTokens = response.UsageMetadata.CandidatesTokenCount
+			meta.TotalTokens = response.UsageMetadata.TotalTokenCount
+		}
+		result = &AiResponse{
+			Content:  candidate.Content.Parts[0].Text,
+			Metadata: meta,
+		}
+		return nil
+	}
+
+	if err := ExecuteWithRetry(ctx, c.config.Retries, operation); err != nil {
+		return nil, err
+	}
+	_ = lastErr
+	return result, nil
+}
+
 // SupportsStreaming returns false (Gemini streaming not implemented yet)
 func (c *GeminiClient) SupportsStreaming() bool {
 	return false
