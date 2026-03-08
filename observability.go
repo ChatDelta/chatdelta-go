@@ -1,15 +1,22 @@
 // Package chatdelta provides a unified interface for interacting with multiple AI APIs.
 // observability.go provides metrics export and structured logging infrastructure for
-// monitoring AI client performance. The Rust implementation's optional Prometheus
-// exporter is omitted here to keep the dependency footprint minimal; a TextExporter
-// that writes formatted metrics to stderr is provided instead. Additional exporters
-// can be wired in by implementing the MetricsExporter interface.
+// monitoring AI client performance.
+//
+// Two MetricsExporter implementations are provided:
+//   - TextExporter: always available, writes human-readable key=value lines to stderr.
+//   - PrometheusExporter: exports metrics in Prometheus format via a dedicated registry.
+//     It mirrors the seven metrics tracked by the Rust observability module.
 package chatdelta
 
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // MetricsExporter is implemented by backends that receive periodic metrics snapshots.
@@ -114,4 +121,124 @@ func (o *ObservabilityContext) LogFields() map[string]string {
 		"provider":   o.Provider,
 		"model":      o.Model,
 	}
+}
+
+// ---------------------------------------------------------------------------
+// PrometheusExporter
+// ---------------------------------------------------------------------------
+
+// PrometheusExporter exports ChatDelta metrics in Prometheus format.
+//
+// It mirrors the seven metrics exported by the Rust observability module:
+//   - chatdelta_requests_total          (gauge — cumulative total requests)
+//   - chatdelta_requests_successful_total (gauge)
+//   - chatdelta_requests_failed_total     (gauge)
+//   - chatdelta_request_duration_ms       (gauge — average latency per request)
+//   - chatdelta_tokens_total              (gauge — cumulative tokens consumed)
+//   - chatdelta_cache_hits_total          (gauge)
+//   - chatdelta_cache_misses_total        (gauge)
+//
+// All counters are modelled as Gauges because Export receives a full
+// MetricsSnapshot with absolute cumulative values (not per-call deltas).
+// This is the idiomatic Go approach when syncing from an external metrics source.
+//
+// The Rust implementation uses a Histogram for request duration with nine
+// buckets (10 ms – 10 s). Because the snapshot only carries an average, that
+// information is surfaced here as a Gauge. If you need the full histogram,
+// record individual observations with a prometheus.Histogram directly.
+//
+// Use NewPrometheusExporter to construct an instance, Export to push a snapshot,
+// and Handler to serve a /metrics endpoint.
+type PrometheusExporter struct {
+	mu       sync.Mutex
+	registry *prometheus.Registry
+
+	requestsTotal      prometheus.Gauge
+	requestsSuccessful prometheus.Gauge
+	requestsFailed     prometheus.Gauge
+	avgLatencyMs       prometheus.Gauge
+	totalTokens        prometheus.Gauge
+	cacheHits          prometheus.Gauge
+	cacheMisses        prometheus.Gauge
+}
+
+// NewPrometheusExporter creates a PrometheusExporter with its own isolated
+// prometheus.Registry (not the global default). Metrics are registered once at
+// construction time; call Export to update their values.
+func NewPrometheusExporter() *PrometheusExporter {
+	reg := prometheus.NewRegistry()
+
+	newGauge := func(name, help string) prometheus.Gauge {
+		g := prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: name,
+			Help: help,
+		})
+		reg.MustRegister(g)
+		return g
+	}
+
+	return &PrometheusExporter{
+		registry: reg,
+
+		requestsTotal: newGauge(
+			"chatdelta_requests_total",
+			"Cumulative number of AI requests made.",
+		),
+		requestsSuccessful: newGauge(
+			"chatdelta_requests_successful_total",
+			"Cumulative number of successful AI requests.",
+		),
+		requestsFailed: newGauge(
+			"chatdelta_requests_failed_total",
+			"Cumulative number of failed AI requests.",
+		),
+		avgLatencyMs: newGauge(
+			"chatdelta_request_duration_ms",
+			"Average latency per successful request in milliseconds.",
+		),
+		totalTokens: newGauge(
+			"chatdelta_tokens_total",
+			"Cumulative number of tokens consumed across all requests.",
+		),
+		cacheHits: newGauge(
+			"chatdelta_cache_hits_total",
+			"Cumulative number of response cache hits.",
+		),
+		cacheMisses: newGauge(
+			"chatdelta_cache_misses_total",
+			"Cumulative number of response cache misses.",
+		),
+	}
+}
+
+// Export synchronises the Prometheus gauges with the given snapshot.
+// It implements MetricsExporter and is safe for concurrent use.
+func (e *PrometheusExporter) Export(snapshot MetricsSnapshot) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.requestsTotal.Set(float64(snapshot.RequestsTotal))
+	e.requestsSuccessful.Set(float64(snapshot.RequestsSuccessful))
+	e.requestsFailed.Set(float64(snapshot.RequestsFailed))
+	e.avgLatencyMs.Set(snapshot.AvgLatencyMs)
+	e.totalTokens.Set(float64(snapshot.TotalTokensUsed))
+	e.cacheHits.Set(float64(snapshot.CacheHits))
+	e.cacheMisses.Set(float64(snapshot.CacheMisses))
+
+	return nil
+}
+
+// Name returns "prometheus".
+func (e *PrometheusExporter) Name() string { return "prometheus" }
+
+// Registry returns the underlying prometheus.Registry so callers can register
+// additional metrics or integrate with existing instrumentation.
+func (e *PrometheusExporter) Registry() *prometheus.Registry { return e.registry }
+
+// Handler returns an http.Handler that serves Prometheus metrics on the
+// standard /metrics path. Mount it on your HTTP mux:
+//
+//	http.Handle("/metrics", exporter.Handler())
+func (e *PrometheusExporter) Handler() http.Handler {
+	return promhttp.HandlerFor(e.registry, promhttp.HandlerOpts{})
 }

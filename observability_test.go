@@ -1,11 +1,15 @@
 package chatdelta
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTextExporter_Interface(t *testing.T) {
@@ -108,4 +112,126 @@ func TestTextExporter_Format_ContainsAllFields(t *testing.T) {
 	} {
 		assert.True(t, strings.Contains(out, key), "missing %q in %q", key, out)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// PrometheusExporter tests
+// ---------------------------------------------------------------------------
+
+func TestPrometheusExporter_Interface(t *testing.T) {
+	var _ MetricsExporter = (*PrometheusExporter)(nil)
+}
+
+func TestPrometheusExporter_Name(t *testing.T) {
+	e := NewPrometheusExporter()
+	assert.Equal(t, "prometheus", e.Name())
+}
+
+func TestPrometheusExporter_Export_NoError(t *testing.T) {
+	e := NewPrometheusExporter()
+	m := NewClientMetrics()
+	m.RecordRequest(true, 150, 300)
+	m.RecordCacheHit()
+	m.RecordCacheMiss()
+
+	err := e.Export(m.Snapshot())
+	assert.NoError(t, err)
+}
+
+func TestPrometheusExporter_Registry_NotNil(t *testing.T) {
+	e := NewPrometheusExporter()
+	assert.NotNil(t, e.Registry())
+}
+
+func scrapeMetrics(t *testing.T, e *PrometheusExporter) string {
+	t.Helper()
+	srv := httptest.NewServer(e.Handler())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body)
+}
+
+func TestPrometheusExporter_Handler_ServesMetrics(t *testing.T) {
+	e := NewPrometheusExporter()
+	m := NewClientMetrics()
+	m.RecordRequest(true, 100, 50)
+	require.NoError(t, e.Export(m.Snapshot()))
+
+	body := scrapeMetrics(t, e)
+	assert.Contains(t, body, "chatdelta_requests_total")
+}
+
+func TestPrometheusExporter_MetricNames(t *testing.T) {
+	e := NewPrometheusExporter()
+	require.NoError(t, e.Export(MetricsSnapshot{}))
+
+	body := scrapeMetrics(t, e)
+	for _, name := range []string{
+		"chatdelta_requests_total",
+		"chatdelta_requests_successful_total",
+		"chatdelta_requests_failed_total",
+		"chatdelta_request_duration_ms",
+		"chatdelta_tokens_total",
+		"chatdelta_cache_hits_total",
+		"chatdelta_cache_misses_total",
+	} {
+		assert.Contains(t, body, name, "metric %q missing from output", name)
+	}
+}
+
+func TestPrometheusExporter_ValuesReflectSnapshot(t *testing.T) {
+	e := NewPrometheusExporter()
+	m := NewClientMetrics()
+	m.RecordRequest(true, 200, 1000)
+	m.RecordRequest(false, 0, 0)
+	m.RecordCacheHit()
+	m.RecordCacheHit()
+	m.RecordCacheMiss()
+	require.NoError(t, e.Export(m.Snapshot()))
+
+	body := scrapeMetrics(t, e)
+	// requests_total should be 2, successful 1, failed 1, cache_hits 2, cache_misses 1.
+	assert.Contains(t, body, "chatdelta_requests_total 2")
+	assert.Contains(t, body, "chatdelta_requests_successful_total 1")
+	assert.Contains(t, body, "chatdelta_requests_failed_total 1")
+	assert.Contains(t, body, "chatdelta_cache_hits_total 2")
+	assert.Contains(t, body, "chatdelta_cache_misses_total 1")
+}
+
+func TestPrometheusExporter_UpdatedOnSubsequentExport(t *testing.T) {
+	e := NewPrometheusExporter()
+
+	m := NewClientMetrics()
+	m.RecordRequest(true, 50, 100)
+	require.NoError(t, e.Export(m.Snapshot()))
+
+	// Record a second request and export again.
+	m.RecordRequest(true, 80, 200)
+	require.NoError(t, e.Export(m.Snapshot()))
+
+	body := scrapeMetrics(t, e)
+	assert.Contains(t, body, "chatdelta_requests_total 2")
+}
+
+func TestPrometheusExporter_IsolatedRegistry(t *testing.T) {
+	// Two exporters must not share state (each has its own registry).
+	e1 := NewPrometheusExporter()
+	e2 := NewPrometheusExporter()
+
+	m1 := NewClientMetrics()
+	m1.RecordRequest(true, 10, 0)
+	require.NoError(t, e1.Export(m1.Snapshot()))
+
+	// e2 has seen no requests.
+	body2 := scrapeMetrics(t, e2)
+	assert.Contains(t, body2, "chatdelta_requests_total 0")
+
+	body1 := scrapeMetrics(t, e1)
+	assert.Contains(t, body1, "chatdelta_requests_total 1")
 }
